@@ -5,6 +5,7 @@ import '@nomicfoundation/hardhat-verify';
 import 'hardhat-local-networks-config-plugin';
 import 'hardhat-ignore-warnings';
 import 'tsconfig-paths/register';
+import "@nomicfoundation/hardhat-toolbox-viem";
 
 import './src/helpers/setupTests';
 
@@ -470,6 +471,7 @@ export default {
     },
   },
   etherscan: {
+    enabled: false,
     customChains: [
       {
         network: 'zkemv',
@@ -503,6 +505,25 @@ export default {
           browserURL: 'https://modescan.io',
         },
       },
+      {
+        network: 'monad',
+        chainId: 10143,
+        urls: {
+          apiURL: 'https://sourcify-api-monad.blockvision.org',
+          browserURL: 'https://testnet.monadexplorer.com',
+        },
+      },
     ],
+  },
+  networks: {
+    monad: {
+      url: "https://testnet-rpc.monad.xyz",
+      chainId: 10143,
+    },
+  },
+  sourcify: {
+    enabled: true,
+    apiUrl: "https://sourcify-api-monad.blockvision.org",
+    browserUrl: "https://testnet.monadexplorer.com",
   },
 };

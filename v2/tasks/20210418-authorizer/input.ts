@@ -39,4 +39,7 @@ export default {
   mode: {
     admin: '0x4f22C2784Cbd2B24a172566491Ee73fee1A63c2e',
   },
+  monad: {
+    admin: '0xca5098e028F36bEfea9372F5664728Ae405E1A1E',
+  }
 };

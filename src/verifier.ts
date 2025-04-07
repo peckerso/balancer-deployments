@@ -33,7 +33,11 @@ export default class Verifier {
     libraries: Libraries = {},
     intent = 1
   ): Promise<string> {
-    const response = await this.verify(task, name, address, constructorArguments, libraries);
+    const response = await (this.etherscanInstance.apiKey === 'sourcify' ? 
+      this.sourcify(task, name, address, constructorArguments, libraries)
+      :
+      this.verify(task, name, address, constructorArguments, libraries)
+    );
 
     if (response.isSuccess()) {
       return this.etherscanInstance.getContractUrl(address);
@@ -44,6 +48,120 @@ export default class Verifier {
     } else {
       throw new Error(`The contract verification failed. Reason: ${response.message}`);
     }
+  }
+
+  private async sourcify(task: Task, name: string, address: string, args: string | unknown[], libraries: Libraries = {}) {
+    const deployedBytecode = await Bytecode.getDeployedContractBytecode(
+      address,
+      this.network.provider,
+      this.network.name
+    );
+
+    let buildInfos: BuildInfo[];
+    try {
+      // First check if there's a specific file named like this.
+      buildInfos = [task.buildInfo(name)];
+    } catch {
+      // Otherwise search in every file.
+      buildInfos = task.buildInfos();
+    }
+    const buildInfo = this.findBuildInfoWithContract(buildInfos, name);
+    buildInfo.input = this.trimmedBuildInfoInput(name, buildInfo.input);
+
+    const sourceName = findContractSourceName(buildInfo, name);
+    const fullSourceName = `${sourceName}:${name}`;
+
+    const contractInformation = await extractMatchingContractInformation(fullSourceName, buildInfo, deployedBytecode);
+    if (!contractInformation) throw Error('Could not find a bytecode matching the requested contract');
+
+    const libraryInformation = await getLibraryInformation(contractInformation, libraries);
+    buildInfo.input.settings.libraries = libraryInformation.libraries;
+
+    const deployArgumentsEncoded =
+      typeof args == 'string'
+        ? args
+        : await encodeArguments(
+            contractInformation.contractOutput.abi,
+            contractInformation.sourceName,
+            contractInformation.contractName,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            args as any[]
+          );
+
+    console.log(
+      `${this.etherscanInstance.apiUrl}/verify/solc-json`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          address,
+          chain: this.network.name,
+          files: {
+            'SolcJsonInput.json': JSON.stringify(buildInfo.input),
+          },
+          compilerVersion: `v${contractInformation.solcLongVersion}`,
+          contractName: contractInformation.contractName,
+        }),
+      }
+    );
+
+    let result;
+    let response;
+
+    // let result = await fetch(
+    //   `${this.etherscanInstance.apiUrl}/v2/contract/${this.network.config.chainId}/${address}`,
+    // );
+
+    // let response = await result.json();
+
+    // console.log('Sourcify response:', response);
+
+    // if (response.match) {
+    //   return {
+    //     isSuccess: () => ['partial', 'perfect'].includes(response.result?.[0]?.status),
+    //     isBytecodeMissingInNetworkError: () => false,
+    //     message: response.result?.[0]?.message || response.error,
+    //   }
+    // }
+
+    result = await fetch(
+      `${this.etherscanInstance.apiUrl}/verify/solc-json`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          address,
+          chain: this.network.config.chainId?.toString(),
+          files: {
+            'SolcJsonInput.json': JSON.stringify(buildInfo.input),
+          },
+          compilerVersion: `v${contractInformation.solcLongVersion}`,
+          contractName: contractInformation.contractName,
+        }),
+      }
+    );
+
+    response = await result.json();
+
+    // console.log(`Sourcify response:`, response);
+
+    return {
+      isSuccess: () => ['partial', 'perfect'].includes(response.result?.[0]?.status),
+      isBytecodeMissingInNetworkError: () => false,
+      message: response.result?.[0]?.message || response.error,
+    };
+
+    // const verificationStatus = await this.etherscanInstance.getVerificationStatus(guid);
+
+    // if (verificationStatus.isFailure() || verificationStatus.isSuccess()) {
+    //   return verificationStatus;
+    // }
+
+    // throw new Error(`The API responded with an unexpected message: ${verificationStatus.message}`);
   }
 
   private async verify(task: Task, name: string, address: string, args: string | unknown[], libraries: Libraries = {}) {
